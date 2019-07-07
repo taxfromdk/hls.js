@@ -74,6 +74,7 @@ class MP3Demuxer {
       { samples: [] },
       { samples: id3Samples, inputTimeScale: 90000 },
       { samples: [] },
+      { samples: [] },
       timeOffset,
       contiguous,
       accurateTimeOffset);

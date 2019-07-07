@@ -390,7 +390,7 @@ class MP4Demuxer {
     }
     MP4Demuxer.offsetStartDTS(initData, data, initPTS);
     startDTS = MP4Demuxer.getStartDTS(initData, data);
-    this.remuxer.remux(initData.audio, initData.video, null, null, startDTS, contiguous, accurateTimeOffset, data);
+    this.remuxer.remux(initData.audio, initData.video, null, null, null, startDTS, contiguous, accurateTimeOffset, data);
   }
 
   destroy () {}

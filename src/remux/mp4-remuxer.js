@@ -34,7 +34,7 @@ class MP4Remuxer {
     this.ISGenerated = false;
   }
 
-  remux (audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset) {
+  remux (audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset) {
     // generate Init Segment if needed
     if (!this.ISGenerated) {
       this.generateIS(audioTrack, videoTrack, timeOffset);
@@ -96,6 +96,11 @@ class MP4Remuxer {
     // logger.log('nb ID3 samples:' + audioTrack.samples.length);
     if (textTrack.samples.length) {
       this.remuxText(textTrack, timeOffset);
+    }
+
+    // logger.log('nb Telemetry samples:' + textTrack.samples.length);
+    if (telemetryTrack.samples.length) {
+      this.remuxTelemetry(telemetryTrack, timeOffset);
     }
 
     // notify end of parsing
@@ -416,6 +421,7 @@ class MP4Remuxer {
       type: 'video',
       hasAudio: false,
       hasVideo: true,
+      hasTelemetry: false,
       nb: outputSamples.length,
       dropped: dropped
     };
@@ -677,6 +683,7 @@ class MP4Remuxer {
         type: 'audio',
         hasAudio: true,
         hasVideo: false,
+        hasTelemetry: false,
         nb: nbSamples
       };
       this.observer.trigger(Event.FRAG_PARSING_DATA, audioData);
@@ -762,6 +769,59 @@ class MP4Remuxer {
       this.observer.trigger(Event.FRAG_PARSING_USERDATA, {
         samples: track.samples
       });
+    }
+
+    track.samples = [];
+  }
+
+  remuxTelemetry (track) {
+    track.samples.sort(function (a, b) {
+      return (a.pts - b.pts);
+    });
+
+    let length = track.samples.length, sample;
+    let telemetry = [];
+    const inputTimeScale = track.inputTimeScale;
+    const initPTS = this._initPTS;
+    // consume samples
+    if (length) {
+      let start = 0;
+      let end = 0;
+      for (let index = 0; index < length; index++) {
+        sample = track.samples[index];
+        if(sample.len != 6) continue; // 3*int16
+        // setting text pts, dts to relative time
+        // using this._initPTS and this._initDTS to calculate relative time
+        sample.pts = ((sample.pts - initPTS) / inputTimeScale);
+        if(index == 0) {
+          start = sample.pts;
+        }
+        else if(index == (length-1)) {
+          end = sample.pts;
+        }
+        let smpl = {};
+        smpl.data = new Int16Array(3);
+        smpl.dts = sample.dts;
+        smpl.pts = sample.pts;
+        smpl.len = 3;
+
+        for(let arrindex = 0; arrindex < sample.len; arrindex+=2) {
+          smpl.data[arrindex/2] = sample.data[arrindex] | sample.data[arrindex + 1] << 8;
+        }
+        telemetry.push(smpl);
+      }
+
+      const telemetryData = {
+        data: telemetry,
+        startPTS: start,
+        endPTS: end,
+        type: 'telemetry',
+        hasAudio: false,
+        hasVideo: false,
+        hasTelemetry: true,
+        nb: length
+      };
+      this.observer.trigger(Event.FRAG_PARSING_DATA, telemetryData);
     }
 
     track.samples = [];

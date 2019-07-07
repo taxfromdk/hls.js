@@ -118,6 +118,7 @@ class TSDemuxer {
     this._audioTrack = TSDemuxer.createTrack('audio', duration);
     this._id3Track = TSDemuxer.createTrack('id3', duration);
     this._txtTrack = TSDemuxer.createTrack('text', duration);
+    this._telemetryTrack = TSDemuxer.createTrack('telemetry', duration);
 
     // flush any partial content
     this.aacOverFlow = null;
@@ -143,20 +144,24 @@ class TSDemuxer {
       avcTrack = this._avcTrack,
       audioTrack = this._audioTrack,
       id3Track = this._id3Track,
+      telemetryTrack = this._telemetryTrack,
       avcId = avcTrack.pid,
       audioId = audioTrack.pid,
       id3Id = id3Track.pid,
+      telemetryId = telemetryTrack.pid,
       pmtId = this._pmtId,
       avcData = avcTrack.pesData,
       audioData = audioTrack.pesData,
       id3Data = id3Track.pesData,
+      telemetryData = telemetryTrack.pesData,
       parsePAT = this._parsePAT,
       parsePMT = this._parsePMT,
       parsePES = this._parsePES,
       parseAVCPES = this._parseAVCPES.bind(this),
       parseAACPES = this._parseAACPES.bind(this),
       parseMPEGPES = this._parseMPEGPES.bind(this),
-      parseID3PES = this._parseID3PES.bind(this);
+      parseID3PES = this._parseID3PES.bind(this),
+      parseTelemetryPES = this._parseTelemetryPES.bind(this);
 
     const syncOffset = TSDemuxer._syncOffset(data);
 
@@ -223,6 +228,18 @@ class TSDemuxer {
             id3Data.size += start + 188 - offset;
           }
           break;
+        case telemetryId:
+          if (stt) {
+            if (telemetryData && (pes = parsePES(telemetryData)) && pes.pts !== undefined) {
+              parseTelemetryPES(pes);
+            }
+            telemetryData = { data: [], size: 0 };
+          }
+          if (telemetryData) {
+            telemetryData.data.push(data.subarray(offset, start + 188));
+            telemetryData.size += start + 188 - offset;
+          }
+          break;
         case 0:
           if (stt) {
             offset += data[offset] + 1;
@@ -256,6 +273,10 @@ class TSDemuxer {
           id3Id = parsedPIDs.id3;
           if (id3Id > 0) {
             id3Track.pid = id3Id;
+          }
+          telemetryId = parsedPIDs.telemetry;
+          if(telemetryId > 0) {
+            telemetryTrack.pid = telemetryId;
           }
 
           if (unknownPIDs && !pmtParsed) {
@@ -311,32 +332,40 @@ class TSDemuxer {
       id3Track.pesData = id3Data;
     }
 
-    if (this.sampleAes == null) {
-      this.remuxer.remux(audioTrack, avcTrack, id3Track, this._txtTrack, timeOffset, contiguous, accurateTimeOffset);
+    if (telemetryData && (pes = parsePES(telemetryData)) && pes.pts !== undefined) {
+      parseTelemetryPES(pes);
+      telemetryTrack.pesData = null;
     } else {
-      this.decryptAndRemux(audioTrack, avcTrack, id3Track, this._txtTrack, timeOffset, contiguous, accurateTimeOffset);
+      // either telemetryData null or PES truncated, keep it for next frag parsing
+      telemetryTrack.pesData = telemetryData;
+    }
+
+    if (this.sampleAes == null) {
+      this.remuxer.remux(audioTrack, avcTrack, id3Track, this._txtTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset);
+    } else {
+      this.decryptAndRemux(audioTrack, avcTrack, id3Track, this._txtTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset);
     }
   }
 
-  decryptAndRemux (audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset) {
+  decryptAndRemux (audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset) {
     if (audioTrack.samples && audioTrack.isAAC) {
       let localthis = this;
       this.sampleAes.decryptAacSamples(audioTrack.samples, 0, function () {
-        localthis.decryptAndRemuxAvc(audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset);
+        localthis.decryptAndRemuxAvc(audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset);
       });
     } else {
-      this.decryptAndRemuxAvc(audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset);
+      this.decryptAndRemuxAvc(audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset);
     }
   }
 
-  decryptAndRemuxAvc (audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset) {
+  decryptAndRemuxAvc (audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset) {
     if (videoTrack.samples) {
       let localthis = this;
       this.sampleAes.decryptAvcSamples(videoTrack.samples, 0, 0, function () {
-        localthis.remuxer.remux(audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset);
+        localthis.remuxer.remux(audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset);
       });
     } else {
-      this.remuxer.remux(audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset);
+      this.remuxer.remux(audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset);
     }
   }
 
@@ -352,7 +381,7 @@ class TSDemuxer {
   }
 
   _parsePMT (data, offset, mpegSupported, isSampleAes) {
-    let sectionLength, tableEnd, programInfoLength, pid, result = { audio: -1, avc: -1, id3: -1, isAAC: true };
+    let sectionLength, tableEnd, programInfoLength, pid, result = { audio: -1, avc: -1, id3: -1, telemetry: -1, isAAC: true };
     sectionLength = (data[offset + 1] & 0x0f) << 8 | data[offset + 2];
     tableEnd = offset + 3 + sectionLength - 4;
     // to determine where the table is, we have to figure out how
@@ -420,9 +449,14 @@ class TSDemuxer {
       case 0x24:
         logger.warn('HEVC stream type found, not supported for now');
         break;
-
+      
+      case 0x06: // Telemetry
+        if(result.telemetry === -1) {
+          result.telemetry = pid; // const 68?
+        }
+        break;
       default:
-        logger.log('unkown stream type:' + data[offset]);
+        logger.log('unkown stream type:' + data[offset] + ' pid:' + pid + ' dataoffset:'+data[offset]);
         break;
       }
       // move to the next table entry
@@ -1075,6 +1109,10 @@ class TSDemuxer {
 
   _parseID3PES (pes) {
     this._id3Track.samples.push(pes);
+  }
+
+  _parseTelemetryPES (pes) {
+    this._telemetryTrack.samples.push(pes);
   }
 }
 

@@ -17,7 +17,7 @@ class PassThroughRemuxer {
   resetInitSegment () {
   }
 
-  remux (audioTrack, videoTrack, id3Track, textTrack, timeOffset, contiguous, accurateTimeOffset, rawData) {
+  remux (audioTrack, videoTrack, id3Track, textTrack, telemetryTrack, timeOffset, contiguous, accurateTimeOffset, rawData) {
     let observer = this.observer;
     let streamType = '';
     if (audioTrack) {
@@ -27,7 +27,7 @@ class PassThroughRemuxer {
     if (videoTrack) {
       streamType += 'video';
     }
-
+    
     observer.trigger(Event.FRAG_PARSING_DATA, {
       data1: rawData,
       startPTS: timeOffset,
@@ -35,6 +35,7 @@ class PassThroughRemuxer {
       type: streamType,
       hasAudio: !!audioTrack,
       hasVideo: !!videoTrack,
+      hasTelemetry: !!telemetryTrack,
       nb: 1,
       dropped: 0
     });

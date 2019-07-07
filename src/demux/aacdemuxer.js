@@ -79,6 +79,7 @@ class AACDemuxer {
       { samples: [] },
       { samples: id3Samples, inputTimeScale: 90000 },
       { samples: [] },
+      { samples: [] },
       timeOffset,
       contiguous,
       accurateTimeOffset);
