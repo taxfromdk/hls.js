@@ -127,10 +127,13 @@ type TSDemuxerConfig = {
 export type HlsConfig =
   {
     debug: boolean,
+    videoTrackIndex: number,
+    audioTrackIndex: number,
     enableWorker: boolean,
     enableSoftwareAES: boolean,
     minAutoBitrate: number,
     loader: any, // TODO(typescript-xhrloader): Type once XHR is done
+    externalLoader: any | null,
     xhrSetup?: (xhr: XMLHttpRequest, url: string) => void,
 
     // Alt Audio
@@ -169,6 +172,8 @@ export const hlsDefaultConfig: HlsConfig = {
   startPosition: -1, // used by stream-controller
   defaultAudioCodec: void 0, // used by stream-controller
   debug: false, // used by logger
+  videoTrackIndex: 1,
+  audioTrackIndex: 1,
   capLevelOnFPSDrop: false, // used by fps-controller
   capLevelToPlayerSize: false, // used by cap-level-controller
   initialLiveManifestSize: 1, // used by stream-controller
@@ -209,6 +214,7 @@ export const hlsDefaultConfig: HlsConfig = {
   appendErrorMaxRetry: 3, // used by buffer-controller
   loader: XhrLoader,
   // loader: FetchLoader,
+  externalLoader: null,
   fLoader: void 0, // used by fragment-loader
   pLoader: void 0, // used by playlist-loader
   xhrSetup: void 0, // used by xhr-loader

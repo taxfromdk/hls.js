@@ -11,6 +11,14 @@ class FragmentLoader extends EventHandler {
   constructor (hls) {
     super(hls, Event.FRAG_LOADING);
     this.loaders = {};
+    this.otherCallbacks = null;
+  }
+
+  addCallbacks (callbacks) {
+    if (!this.otherCallbacks) {
+      this.otherCallbacks = [];
+    }
+    this.otherCallbacks.push(callbacks);
   }
 
   destroy () {
@@ -76,6 +84,11 @@ class FragmentLoader extends EventHandler {
   }
 
   loadsuccess (response, stats, context, networkDetails = null) {
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loadsuccess(response, stats, context, networkDetails);
+      });
+    }
     let payload = response.data, frag = context.frag;
     // detach fragment loader on load success
     frag.loader = undefined;
@@ -84,6 +97,11 @@ class FragmentLoader extends EventHandler {
   }
 
   loaderror (response, context, networkDetails = null) {
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loaderror(response, context, networkDetails);
+      });
+    }
     const frag = context.frag;
     let loader = frag.loader;
     if (loader) {
@@ -95,6 +113,11 @@ class FragmentLoader extends EventHandler {
   }
 
   loadtimeout (stats, context, networkDetails = null) {
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loadtimeout(stats, context, networkDetails);
+      });
+    }
     const frag = context.frag;
     let loader = frag.loader;
     if (loader) {
@@ -107,6 +130,11 @@ class FragmentLoader extends EventHandler {
 
   // data will be used for progressive parsing
   loadprogress (stats, context, data, networkDetails = null) { // jshint ignore:line
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loadprogress(stats, context, data, networkDetails);
+      });
+    }
     let frag = context.frag;
     frag.loaded = stats.loaded;
     this.hls.trigger(Event.FRAG_LOAD_PROGRESS, { frag: frag, stats: stats, networkDetails: networkDetails });

@@ -6,8 +6,11 @@ import {
 } from './errors';
 
 import PlaylistLoader from './loader/playlist-loader';
+import PlaylistLoaderCustom from './loader/playlist-loader-custom';
 import FragmentLoader from './loader/fragment-loader';
+import FragmentLoaderCustom from './loader/fragment-loader-custom';
 import KeyLoader from './loader/key-loader';
+import KeyLoaderCustom from './loader/key-loader-custom';
 
 import { FragmentTracker } from './controller/fragment-tracker';
 import StreamController from './controller/stream-controller';
@@ -141,9 +144,9 @@ export default class Hls extends Observer {
     const bufferController = new config.bufferController(this); // eslint-disable-line new-cap
     const capLevelController = this.capLevelController = new config.capLevelController(this); // eslint-disable-line new-cap
     const fpsController = new config.fpsController(this); // eslint-disable-line new-cap
-    const playListLoader = new PlaylistLoader(this);
-    const fragmentLoader = new FragmentLoader(this);
-    const keyLoader = new KeyLoader(this);
+    const playListLoader = config.externalLoader ? new PlaylistLoaderCustom(this, config.externalLoader[0]) : new PlaylistLoader(this);
+    const fragmentLoader = config.externalLoader ? new FragmentLoaderCustom(this, config.externalLoader[1]) : new FragmentLoader(this);
+    const keyLoader = config.externalLoader ? new KeyLoaderCustom(this, config.externalLoader[2]) : new KeyLoader(this);
     const id3TrackController = new ID3TrackController(this);
 
     // network controllers
@@ -242,6 +245,10 @@ export default class Hls extends Observer {
     this.coreComponents = coreComponents;
   }
 
+
+  getExternalLoader(): any[] {
+    return this.coreComponents;
+  }
   /**
    * Dispose of the instance
    */

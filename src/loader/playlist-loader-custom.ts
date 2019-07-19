@@ -1,5 +1,5 @@
 /**
- * PlaylistLoader - delegate for media manifest/playlist loading tasks. Takes care of parsing media to internal data-models.
+ * PlaylistLoaderCustom - delegate for media manifest/playlist loading tasks. Takes care of parsing media to internal data-models.
  *
  * Once loaded, dispatches events with parsed data-models of manifest/levels/audio/subtitle tracks.
  *
@@ -16,251 +16,62 @@ import { logger } from '../utils/logger';
 import { Loader, PlaylistContextType, PlaylistLoaderContext, PlaylistLevelType, LoaderCallbacks, LoaderResponse, LoaderStats, LoaderConfiguration } from '../types/loader';
 import MP4Demuxer from '../demux/mp4demuxer';
 import M3U8Parser from './m3u8-parser';
+import PlaylistLoader from './playlist-loader';
+import Hls from '../hls';
 
 const { performance } = window;
 
 /**
  * @constructor
  */
-class PlaylistLoader extends EventHandler {
+class PlaylistLoaderCustom extends EventHandler {
   private loaders: Partial<Record<PlaylistContextType, Loader<PlaylistLoaderContext>>> = {};
-  private otherCallbacks: any[] | null = null;
+  private plLoader: PlaylistLoader;
 
   /**
    * @constructs
    * @param {Hls} hls
+   * @param {any} plLoader
    */
-  constructor (hls) {
+  constructor (hls, plLoader) {
     super(hls,
       Event.MANIFEST_LOADING,
       Event.LEVEL_LOADING,
       Event.AUDIO_TRACK_LOADING,
       Event.SUBTITLE_TRACK_LOADING);
-  }
-
-  /**
-   * @param {PlaylistContextType} type
-   * @returns {boolean}
-   */
-  static canHaveQualityLevels (type: PlaylistContextType): boolean {
-    return (type !== PlaylistContextType.AUDIO_TRACK &&
-      type !== PlaylistContextType.SUBTITLE_TRACK);
-  }
-
-  /**
-   * Map context.type to LevelType
-   * @param {PlaylistLoaderContext} context
-   * @returns {LevelType}
-   */
-  static mapContextToLevelType (context: PlaylistLoaderContext): PlaylistLevelType {
-    const { type } = context;
-
-    switch (type) {
-    case PlaylistContextType.AUDIO_TRACK:
-      return PlaylistLevelType.AUDIO;
-    case PlaylistContextType.SUBTITLE_TRACK:
-      return PlaylistLevelType.SUBTITLE;
-    default:
-      return PlaylistLevelType.MAIN;
-    }
-  }
-
-  static getResponseUrl (response: LoaderResponse, context: PlaylistLoaderContext): string {
-    let url = response.url;
-    // responseURL not supported on some browsers (it is used to detect URL redirection)
-    // data-uri mode also not supported (but no need to detect redirection)
-    if (url === undefined || url.indexOf('data:') === 0) {
-      // fallback to initial URL
-      url = context.url;
-    }
-    return url;
-  }
-
-  /**
-   * Returns defaults or configured loader-type overloads (pLoader and loader config params)
-   * Default loader is XHRLoader (see utils)
-   * @param {PlaylistLoaderContext} context
-   * @returns {Loader} or other compatible configured overload
-   */
-  createInternalLoader (context: PlaylistLoaderContext): Loader<PlaylistLoaderContext> {
-    const config = this.hls.config;
-    const PLoader = config.pLoader;
-    const Loader = config.loader;
-    // TODO(typescript-config): Verify once config is typed that InternalLoader always returns a Loader
-    const InternalLoader = PLoader || Loader;
-
-    const loader = new InternalLoader(config);
-
-    // TODO - Do we really need to assign the instance or if the dep has been lost
-    context.loader = loader;
-    this.loaders[context.type] = loader;
-
-    return loader;
-  }
-
-  getInternalLoader (context: PlaylistLoaderContext): Loader<PlaylistLoaderContext> | undefined {
-    return this.loaders[context.type];
-  }
-
-  resetInternalLoader (contextType: PlaylistContextType) {
-    if (this.loaders[contextType]) {
-      delete this.loaders[contextType];
-    }
-  }
-
-  /**
-   * Call `destroy` on all internal loader instances mapped (one per context type)
-   */
-  destroyInternalLoaders () {
-    for (let contextType in this.loaders) {
-      let loader = this.loaders[contextType];
-      if (loader) {
-        loader.destroy();
-      }
-
-      this.resetInternalLoader(contextType as PlaylistContextType);
-    }
+    this.plLoader = plLoader;
+    this.plLoader.addCallbacks(this);
   }
 
   destroy () {
-    this.destroyInternalLoaders();
-
     super.destroy();
   }
 
   onManifestLoading (data: { url: string; }) {
-    this.load({
-      url: data.url,
-      type: PlaylistContextType.MANIFEST,
-      level: 0,
-      id: null,
-      responseType: 'text'
-    });
   }
 
   onLevelLoading (data: { url: string; level: number | null; id: number | null; }) {
-    this.load({
-      url: data.url,
-      type: PlaylistContextType.LEVEL,
-      level: data.level,
-      id: data.id,
-      responseType: 'text'
-    });
   }
 
   onAudioTrackLoading (data: { url: string; id: number | null; }) {
-    this.load({
-      url: data.url,
-      type: PlaylistContextType.AUDIO_TRACK,
-      level: null,
-      id: data.id,
-      responseType: 'text'
-    });
   }
 
   onSubtitleTrackLoading (data: { url: string; id: number | null; }) {
-    this.load({
-      url: data.url,
-      type: PlaylistContextType.SUBTITLE_TRACK,
-      level: null,
-      id: data.id,
-      responseType: 'text'
-    });
   }
 
   load (context: PlaylistLoaderContext): boolean {
-    const config = this.hls.config;
-
-    logger.debug(`Loading playlist of type ${context.type}, level: ${context.level}, id: ${context.id}`);
-
-    // Check if a loader for this context already exists
-    let loader = this.getInternalLoader(context);
-    if (loader) {
-      const loaderContext = loader.context;
-      if (loaderContext && loaderContext.url === context.url) { // same URL can't overlap
-        logger.trace('playlist request ongoing');
-        return false;
-      } else {
-        logger.warn(`aborting previous loader for type: ${context.type}`);
-        loader.abort();
-      }
-    }
-
-    let maxRetry: number;
-    let timeout: number;
-    let retryDelay: number;
-    let maxRetryDelay: number;
-
-    // apply different configs for retries depending on
-    // context (manifest, level, audio/subs playlist)
-    switch (context.type) {
-    case PlaylistContextType.MANIFEST:
-      maxRetry = config.manifestLoadingMaxRetry;
-      timeout = config.manifestLoadingTimeOut;
-      retryDelay = config.manifestLoadingRetryDelay;
-      maxRetryDelay = config.manifestLoadingMaxRetryTimeout;
-      break;
-    case PlaylistContextType.LEVEL:
-      // Disable internal loader retry logic, since we are managing retries in Level Controller
-      maxRetry = 0;
-      maxRetryDelay = 0;
-      retryDelay = 0;
-      timeout = config.levelLoadingTimeOut;
-      // TODO Introduce retry settings for audio-track and subtitle-track, it should not use level retry config
-      break;
-    default:
-      maxRetry = config.levelLoadingMaxRetry;
-      timeout = config.levelLoadingTimeOut;
-      retryDelay = config.levelLoadingRetryDelay;
-      maxRetryDelay = config.levelLoadingMaxRetryTimeout;
-      break;
-    }
-
-    loader = this.createInternalLoader(context);
-
-    const loaderConfig: LoaderConfiguration = {
-      timeout,
-      maxRetry,
-      retryDelay,
-      maxRetryDelay
-    };
-
-    const loaderCallbacks: LoaderCallbacks<PlaylistLoaderContext> = {
-      onSuccess: this.loadsuccess.bind(this),
-      onError: this.loaderror.bind(this),
-      onTimeout: this.loadtimeout.bind(this)
-    };
-
-    logger.debug(`Calling internal loader delegate for URL: ${context.url}`);
-    loader.load(context, loaderConfig, loaderCallbacks);
-
     return true;
   }
 
-  addCallbacks(loadsuccess: any) {
-    if(!this.otherCallbacks) {
-      this.otherCallbacks = [];
-    }
-    this.otherCallbacks.push(loadsuccess);
-  }
-
   loadsuccess (response: LoaderResponse, stats: LoaderStats, context: PlaylistLoaderContext, networkDetails: unknown = null) {
-    if(this.otherCallbacks) {
-      this.otherCallbacks.forEach(elem => {
-        elem.loadsuccess(response, stats, context, networkDetails);
-      });
-    }
     if (context.isSidxRequest) {
       this._handleSidxRequest(response, context);
       this._handlePlaylistLoaded(response, stats, context, networkDetails);
       return;
     }
-
-    this.resetInternalLoader(context.type);
     if (typeof response.data !== 'string') {
       throw new Error('expected responseType of "text" for PlaylistLoader');
     }
-
     const string = response.data;
 
     stats.tload = performance.now();
@@ -281,20 +92,10 @@ class PlaylistLoader extends EventHandler {
   }
 
   loaderror (response: LoaderResponse, context: PlaylistLoaderContext, networkDetails = null) {
-    if(this.otherCallbacks) {
-      this.otherCallbacks.forEach(elem => {
-        elem.loaderror(response, context, networkDetails);
-      });
-    }
     this._handleNetworkError(context, networkDetails, false, response);
   }
 
   loadtimeout (stats: LoaderStats, context: PlaylistLoaderContext, networkDetails = null) {
-    if(this.otherCallbacks) {
-      this.otherCallbacks.forEach(elem => {
-        elem.loadtimeout(stats, context, networkDetails);
-      });
-    }
     this._handleNetworkError(context, networkDetails, true);
   }
 
@@ -464,7 +265,7 @@ class PlaylistLoader extends EventHandler {
     let details;
     let fatal;
 
-    const loader = this.getInternalLoader(context);
+    const loader = this.plLoader.getInternalLoader(context);
 
     switch (context.type) {
     case PlaylistContextType.MANIFEST:
@@ -482,11 +283,6 @@ class PlaylistLoader extends EventHandler {
     default:
       // details = ...?
       fatal = false;
-    }
-
-    if (loader) {
-      loader.abort();
-      this.resetInternalLoader(context.type);
     }
 
     // TODO(typescript-events): when error events are handled, type this
@@ -547,4 +343,4 @@ class PlaylistLoader extends EventHandler {
   }
 }
 
-export default PlaylistLoader;
+export default PlaylistLoaderCustom;

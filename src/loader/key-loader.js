@@ -13,6 +13,14 @@ class KeyLoader extends EventHandler {
     this.loaders = {};
     this.decryptkey = null;
     this.decrypturl = null;
+    this.otherCallbacks = null;
+  }
+
+  addCallbacks (callbacks) {
+    if (!this.otherCallbacks) {
+      this.otherCallbacks = [];
+    }
+    this.otherCallbacks.push(callbacks);
   }
 
   destroy () {
@@ -60,6 +68,11 @@ class KeyLoader extends EventHandler {
   }
 
   loadsuccess (response, stats, context) {
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loadsuccess(response, stats, context);
+      });
+    }
     let frag = context.frag;
     this.decryptkey = frag.decryptdata.key = new Uint8Array(response.data);
     // detach fragment loader on load success
@@ -69,6 +82,11 @@ class KeyLoader extends EventHandler {
   }
 
   loaderror (response, context) {
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loaderror(response, context);
+      });
+    }
     let frag = context.frag,
       loader = frag.loader;
     if (loader) {
@@ -80,6 +98,11 @@ class KeyLoader extends EventHandler {
   }
 
   loadtimeout (stats, context) {
+    if (this.otherCallbacks) {
+      this.otherCallbacks.forEach(elem => {
+        elem.loadtimeout(stats, context);
+      });
+    }
     let frag = context.frag,
       loader = frag.loader;
     if (loader) {

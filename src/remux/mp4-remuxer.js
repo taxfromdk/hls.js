@@ -779,7 +779,8 @@ class MP4Remuxer {
       return (a.pts - b.pts);
     });
 
-    let length = track.samples.length, sample;
+    let length = track.samples.length;
+    let sample;
     let telemetry = [];
     const inputTimeScale = track.inputTimeScale;
     const initPTS = this._initPTS;
@@ -789,14 +790,13 @@ class MP4Remuxer {
       let end = 0;
       for (let index = 0; index < length; index++) {
         sample = track.samples[index];
-        if(sample.len != 6) continue; // 3*int16
+        if (sample.len !== 6) continue; // 3*int16
         // setting text pts, dts to relative time
         // using this._initPTS and this._initDTS to calculate relative time
         sample.pts = ((sample.pts - initPTS) / inputTimeScale);
-        if(index == 0) {
+        if (index === 0) {
           start = sample.pts;
-        }
-        else if(index == (length-1)) {
+        } else if (index === (length - 1)) {
           end = sample.pts;
         }
         let smpl = {};
@@ -805,8 +805,8 @@ class MP4Remuxer {
         smpl.pts = sample.pts;
         smpl.len = 3;
 
-        for(let arrindex = 0; arrindex < sample.len; arrindex+=2) {
-          smpl.data[arrindex/2] = sample.data[arrindex] | sample.data[arrindex + 1] << 8;
+        for (let arrindex = 0; arrindex < sample.len; arrindex += 2) {
+          smpl.data[ arrindex / 2 ] = sample.data[arrindex] | sample.data[arrindex + 1] << 8;
         }
         telemetry.push(smpl);
       }

@@ -30,7 +30,8 @@ const RemuxerTrackIdConfig = {
   video: 1,
   audio: 2,
   id3: 3,
-  text: 4
+  text: 4,
+  telemetry: 5
 };
 
 class TSDemuxer {
@@ -252,7 +253,7 @@ class TSDemuxer {
             offset += data[offset] + 1;
           }
 
-          let parsedPIDs = parsePMT(data, offset, this.typeSupported.mpeg === true || this.typeSupported.mp3 === true, this.sampleAes != null);
+          let parsedPIDs = parsePMT(data, offset, this.typeSupported.mpeg === true || this.typeSupported.mp3 === true, this.sampleAes != null, this.config);
 
           // only update track id if track PID found while parsing PMT
           // this is to avoid resetting the PID to -1 in case
@@ -380,8 +381,10 @@ class TSDemuxer {
     // logger.log('PMT PID:'  + this._pmtId);
   }
 
-  _parsePMT (data, offset, mpegSupported, isSampleAes) {
+  _parsePMT (data, offset, mpegSupported, isSampleAes, config) {
     let sectionLength, tableEnd, programInfoLength, pid, result = { audio: -1, avc: -1, id3: -1, telemetry: -1, isAAC: true };
+    let videoIndex = config.videoTrackIndex;
+    let audioIndex = config.audioTrackIndex;
     sectionLength = (data[offset + 1] & 0x0f) << 8 | data[offset + 2];
     tableEnd = offset + 3 + sectionLength - 4;
     // to determine where the table is, we have to figure out how
@@ -402,10 +405,10 @@ class TSDemuxer {
         // ISO/IEC 13818-7 ADTS AAC (MPEG-2 lower bit-rate audio)
       case 0x0f:
         // logger.log('AAC PID:'  + pid);
-        if (result.audio === -1) {
+        if (result.audio === -1 && audioIndex == 1) {
           result.audio = pid;
         }
-
+        audioIndex -= 1;
         break;
 
         // Packetized metadata (ID3)
@@ -427,10 +430,10 @@ class TSDemuxer {
         // ITU-T Rec. H.264 and ISO/IEC 14496-10 (lower bit-rate video)
       case 0x1b:
         // logger.log('AVC PID:'  + pid);
-        if (result.avc === -1) {
+        if (result.avc === -1 && videoIndex == 1) {
           result.avc = pid;
         }
-
+        videoIndex -= 1;
         break;
 
         // ISO/IEC 11172-3 (MPEG-1 audio)
@@ -451,12 +454,12 @@ class TSDemuxer {
         break;
       
       case 0x06: // Telemetry
-        if(result.telemetry === -1) {
+        if (result.telemetry === -1) {
           result.telemetry = pid; // const 68?
         }
         break;
       default:
-        logger.log('unkown stream type:' + data[offset] + ' pid:' + pid + ' dataoffset:'+data[offset]);
+        logger.log('unkown stream type:' + data[offset] + ' pid:' + pid + ' dataoffset:' + data[offset]);
         break;
       }
       // move to the next table entry

@@ -107,7 +107,8 @@ class XhrLoader {
         // http status between 200 to 299 are all successful
         if (status >= 200 && status < 300) {
           stats.tload = Math.max(stats.tfirst, performance.now());
-          let data, len;
+          let data;
+          let len;
           if (context.responseType === 'arraybuffer') {
             data = xhr.response;
             len = data.byteLength;
@@ -117,6 +118,7 @@ class XhrLoader {
           }
           stats.loaded = stats.total = len;
           let response = { url: xhr.responseURL, data: data };
+          //logger.warn(`loadInternal ${context.url} readedsize=${len}`);
           this.callbacks.onSuccess(response, stats, context, xhr);
         } else {
           // if max nb of retries reached or if http status between 400 and 499 (such error cannot be recovered, retrying is useless), return error
@@ -148,8 +150,8 @@ class XhrLoader {
   }
 
   loadprogress (event) {
-    let xhr = event.currentTarget,
-      stats = this.stats;
+    let xhr = event.currentTarget;
+    let stats = this.stats;
 
     stats.loaded = event.loaded;
     if (event.lengthComputable) {
