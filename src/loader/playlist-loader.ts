@@ -319,6 +319,20 @@ class PlaylistLoader extends EventHandler {
       codec: level.audioCodec
     }));
 
+    // get ext-x-media track
+    const config = hls.config;
+    if(config.extVideoMediaIndex > 0) {
+      let videoTracks = M3U8Parser.parseMasterPlaylistMedia(string, url, 'VIDEO', audioGroups);
+      if(videoTracks.length < config.extVideoMediaIndex) {
+        this._handleManifestParsingError(response, context, `required number of tracks not found (${videoTracks.length} of ${config.extVideoMediaIndex})`, networkDetails);
+        return;
+      }
+      hls.url = videoTracks[config.extVideoMediaIndex-1].url;
+      this.hls.trigger(Event.MANIFEST_LOADING, { url: hls.url });
+      return;
+    }
+    //
+
     let audioTracks = M3U8Parser.parseMasterPlaylistMedia(string, url, 'AUDIO', audioGroups);
     let subtitles = M3U8Parser.parseMasterPlaylistMedia(string, url, 'SUBTITLES');
 

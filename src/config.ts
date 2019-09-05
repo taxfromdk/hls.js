@@ -129,6 +129,7 @@ export type HlsConfig =
     debug: boolean,
     videoTrackIndex: number,
     audioTrackIndex: number,
+    extVideoMediaIndex: number,
     enableWorker: boolean,
     enableSoftwareAES: boolean,
     minAutoBitrate: number,
@@ -174,6 +175,7 @@ export const hlsDefaultConfig: HlsConfig = {
   debug: false, // used by logger
   videoTrackIndex: 1,
   audioTrackIndex: 1,
+  extVideoMediaIndex: 0,
   capLevelOnFPSDrop: false, // used by fps-controller
   capLevelToPlayerSize: false, // used by cap-level-controller
   initialLiveManifestSize: 1, // used by stream-controller
